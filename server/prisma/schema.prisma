@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  WAREHOUSE
+  ORDER_OPERATOR
+  COURIER
+  CUSTOMER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_DELIVERY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum InventoryReason {
+  PURCHASE
+  RESTOCK
+  MANUAL_ADJUSTMENT
+  ORDER_CANCELLED
+  RETURN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  phone        String   @unique
+  passwordHash String
+  name         String
+  surname      String?
+  role         Role     @default(CUSTOMER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders       Order[]
+  addresses    Address[]
+  favorites    Favorite[]
+  cart         Cart?
+  couponUsages CouponUsage[]
+  notifications Notification[]
+  auditLogs    AuditLog[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([active, sortOrder])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  name        String
+  description String?
+  priceKopek  Int
+  saleKopek   Int?
+  stock       Int      @default(0)
+  imageUrl    String?
+  brand       String?
+  unit        String?
+  active      Boolean  @default(true)
+  isNew       Boolean  @default(false)
+  isPopular   Boolean  @default(false)
+  isCampaign  Boolean  @default(false)
+
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cartItems       CartItem[]
+  orderItems      OrderItem[]
+  favorites       Favorite[]
+  inventoryTx     InventoryTransaction[]
+
+  @@index([categoryId])
+  @@index([active])
+  @@index([createdAt])
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id])
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  productId String
+  quantity  Int
+
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+}
+
+model Address {
+  id           String @id @default(cuid())
+  userId       String
+  name         String
+  surname      String
+  phone        String
+  district     String
+  settlement   String
+  street       String?
+  houseNumber  String?
+  note         String?
+  isDefault    Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DeliveryZone {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  feeKopek    Int     @default(0)
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique
+  customerId      String
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod
+  totalKopek      Int
+  deliveryKopek   Int           @default(0)
+  addressText     String
+  note            String?
+  idempotencyKey  String        @unique
+
+  customer User @relation(fields: [customerId], references: [id])
+
+  items       OrderItem[]
+  payment     Payment?
+  inventoryTx InventoryTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  productId   String
+  productName String
+  sku         String
+  unitPrice   Int
+  quantity    Int
+  totalKopek  Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String        @unique
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  amountKopek Int
+  provider    String?
+  providerId  String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model InventoryTransaction {
+  id        String          @id @default(cuid())
+  productId String
+  orderId   String?
+  quantity  Int
+  reason    InventoryReason
+  note      String?
+  createdAt DateTime        @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  @@index([productId])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model Favorite {
+  id        String @id @default(cuid())
+  userId    String
+  productId String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+model Coupon {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  type           String
+  value          Int
+  minOrderKopek  Int      @default(0)
+  maxDiscountKopek Int?
+  startAt        DateTime?
+  endAt          DateTime?
+  usageLimit     Int?
+  perUserLimit   Int?
+  active         Boolean  @default(true)
+
+  usages CouponUsage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CouponUsage {
+  id       String @id @default(cuid())
+  couponId String
+  userId   String
+  orderId  String
+  usedAt   DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+  
+  @@index([couponId])
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  userId    String
+  response  Json?
+  createdAt DateTime @default(now())
+}
